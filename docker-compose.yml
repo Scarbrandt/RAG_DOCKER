@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB:   "db"
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "123"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_DB:      db
+      POSTGRES_USER:    postgres
+      POSTGRES_PASSWORD: 123
+      POSTGRES_HOST:    postgres
+      POSTGRES_PORT:    5432
+      SUPERADMIN: 123
+      FAISS_INDEX_DIR:  "/app/faiss_index"
+      FAISS_INDEX_DIR_ANSWER: "/app/faiss_index_answer"
+      DOCS_FOLDER:      "/app/docs"
+      MODEL_CACHE:    "/app/model_cache"
+      TRANSFORMERS_CACHE: "/app/model_cache/transformers"
+      HF_HOME:            "/app/model_cache/huggingface"
+      JINA_CACHE_DIR:     "/app/model_cache/jina"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    runtime: nvidia
+    volumes:
+      - ./docs:/app/docs
+      - ./model_cache:/app/model_cache
+      - ./faiss_index:/app/faiss_index
+      - ./faiss_index_answer:/app/faiss_index_answer
+    ports:
+      - "8000:8000"
+    restart: on-failure
+
+volumes:
+  db_data:

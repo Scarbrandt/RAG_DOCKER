@@ -1,0 +1,4 @@
+model_cache/
+docs/
+faiss_index/
+*.zip
