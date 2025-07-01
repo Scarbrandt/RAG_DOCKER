@@ -198,32 +198,57 @@ async def is_line_bold(chars_of_line, threshold=0.5):
     return (bold_count / len(chars_of_line)) >= threshold
 
 async def is_valid_header(line: str) -> bool:
+    """
+    Detects headings in any of these four formats:
+    1. "Chapter N. Text" – where N is the chapter number; left-aligned and bold
+    2. "N.K. Text" – where N is chapter number and K is subheading number; left-aligned and bold
+    3. "N. TEXT" – where N is heading number and text is in ALL UPPERCASE
+    4. "N. Text" – where N is heading number and text is in Sentence case
+    """
     line = line.strip()
-    # Тип 1: без точки после числа
-    m1 = re.match(r'^(\d+)\s+([A-ZА-ЯЁ\s,]+)[\s,.:;!?]*$', line)
-    if m1:
-        text_part = m1.group(2)
-        stripped = re.sub(r'[\s,]+', '', text_part)
-        if stripped.upper() == stripped:
-            return True
-    # Тип 2: со знаком точки после числа
-    m2 = re.match(r'^(\d+(?:\.\d+)*)\.\s*(.+)$', line)
-    if not m2:
-        return False
-    number_part = m2.group(1)
-    text_part = m2.group(2)
-    if number_part.count('.') > 1:
-        return text_part.strip().upper() == text_part.strip()
-    elif '.' in number_part:
-        return text_part.strip().upper() == text_part.strip() or text_part.strip()[0].isupper()
-    else:
-        return text_part.strip()[0].isupper() or text_part.strip().upper() == text_part.strip()
+    
+    # Format 1: "Chapter N. Text" - chapter with number followed by dot and text
+    chapter_pattern = re.match(r'^Chapter\s+(\d+)\.\s*(.+)$', line, re.IGNORECASE)
+    if chapter_pattern:
+        text_part = chapter_pattern.group(2).strip()
+        # Check if text part is not empty and starts with capital letter
+        return len(text_part) > 0 and text_part[0].isupper()
+    
+    # Format 2: "N.K. Text" - hierarchical numbering (chapter.subheading)
+    hierarchical_pattern = re.match(r'^(\d+)\.(\d+)\.\s*(.+)$', line)
+    if hierarchical_pattern:
+        text_part = hierarchical_pattern.group(3).strip()
+        # Check if text part is not empty and starts with capital letter
+        return len(text_part) > 0 and text_part[0].isupper()
+    
+    # Format 3: "N. TEXT" - single number with ALL UPPERCASE text
+    uppercase_pattern = re.match(r'^(\d+)\.\s*(.+)$', line)
+    if uppercase_pattern:
+        text_part = uppercase_pattern.group(2).strip()
+        if len(text_part) > 0:
+            # Check if text is in ALL UPPERCASE (ignoring spaces, punctuation)
+            # Extract only letters for uppercase check
+            letters_only = ''.join(c for c in text_part if c.isalpha())
+            if letters_only and letters_only.isupper():
+                return True
+    
+    # Format 4: "N. Text" - single number with Sentence case text
+    sentence_pattern = re.match(r'^(\d+)\.\s*(.+)$', line)
+    if sentence_pattern:
+        text_part = sentence_pattern.group(2).strip()
+        if len(text_part) > 0:
+            # Check if text starts with uppercase letter (Sentence case)
+            # and is not ALL UPPERCASE (to distinguish from format 3)
+            letters_only = ''.join(c for c in text_part if c.isalpha())
+            if letters_only and text_part[0].isupper() and not letters_only.isupper():
+                return True
+    
+    return False
 
 async def extract_blocks(pdf_path: str) -> dict:
     with pdfplumber.open(pdf_path) as pdf:
         full_text = ""
-        headings_type1 = []
-        headings_dot = []   
+        headings = []
         for page in pdf.pages:
             txt = page.extract_text() or ""
             full_text += txt + "\n"
@@ -234,20 +259,9 @@ async def extract_blocks(pdf_path: str) -> dict:
             lines_info = await group_chars_by_line(chars, y_tolerance=3)
             for (_, clist, line_text) in lines_info:
                 if await is_valid_header(line_text) and await is_line_bold(clist, threshold=0.8):
-                    if re.match(r'^\d+\s+[A-ZА-ЯЁ\s,]+[\s,.:;!?]*$', line_text):
-                        headings_type1.append(line_text.strip())
-                    else:
-                        headings_dot.append(line_text.strip())
-        if pdf_path == f'{MODEL_CACHE}/STO_Rukovodstvo-po-kachestvu-obrazovaniya_2024.pdf':
-            if headings_type1:
-                headings = headings_type1
-                logging.info(f"Используем заголовки первого типа (без точки): {headings}")
-            else:
-                headings = headings_dot
-                logging.info(f"Используем заголовки с точкой: {headings}")
-        else:
-            headings = headings_type1 + headings_dot
-            logging.info(f"Найдены заголовки: {headings}")
+                    headings.append(line_text.strip())
+        
+        logging.info(f"Найдены заголовки: {headings}")
         
     
     if not headings:
